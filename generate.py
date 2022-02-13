@@ -31,9 +31,9 @@ CAT_SURROGATE = 'Cs'
 # Maximum codepoint value.
 MAX_CODEPOINT = 0x110000
 
-CPP_PREFIX = 'widechar_'
+CPP_PREFIX = 'codepoint_'
 
-OUTPUT_FILENAME = 'widechar_width.h'
+OUTPUT_FILENAME = 'codepoint_width.c'
 
 OUTPUT_TEMPLATE = r'''
 /**
@@ -45,31 +45,13 @@ OUTPUT_TEMPLATE = r'''
  *  EastAsianWidth.txt:  {eaw_hash}
  *  emoji-data.txt:      {emoji_hash}
  */
-
-#ifndef WIDECHAR_WIDTH_H
-#define WIDECHAR_WIDTH_H
-
-#include <algorithm>
-#include <iterator>
-#include <cstddef>
-#include <cstdint>
-
-namespace {{
-
-/* Special width values */
-enum {{
-  {p}nonprint = -1,     // The character is not printable.
-  {p}combining = -2,    // The character is a zero-width combiner.
-  {p}ambiguous = -3,    // The character is East-Asian ambiguous width.
-  {p}private_use = -4,  // The character is for private use.
-  {p}unassigned = -5,   // The character is unassigned.
-  {p}widened_in_9 = -6  // Width is 1 in Unicode 8, 2 in Unicode 9+.
-}};
+#include <stddef.h>
+#include "codepoint_width.h"
 
 /* An inclusive range of characters. */
 struct {p}range {{
-  int32_t lo;
-  int32_t hi;
+  int lo;
+  int hi;
 }};
 
 /* Private usage range. */
@@ -108,34 +90,47 @@ static const struct {p}range {p}widened_table[] = {{
     {widenedin9}
 }};
 
-template<typename Collection>
-bool {p}in_table(const Collection &arr, int32_t c) {{
-    auto where = std::lower_bound(std::begin(arr), std::end(arr), c,
-        []({p}range p, wchar_t c) {{ return p.hi < c; }});
-    return where != std::end(arr) && where->lo <= c;
+static int in_table(const struct {p}range *table, size_t n_items, int c)
+{{
+  if (c < table[0].lo) return 0;
+
+  unsigned bot = 0;
+  unsigned top = n_items - 1;
+  unsigned mid;
+  while (top >= bot) {{
+    mid = (bot + top) / 2;
+    if (table[mid].hi < c)
+      bot = mid + 1;
+    else if (table[mid].lo > c)
+      top = mid - 1;
+    else
+      return 1;
+  }}
+
+  return 0;
 }}
 
+#define lengthof(x) (sizeof x / sizeof 0[x])
+
 /* Return the width of character c, or a special negative value. */
-int {p}wcwidth(wchar_t c) {{
-    if ({p}in_table({p}private_table, c))
+int {p}width(int c)
+{{
+    if (in_table({p}private_table, lengthof({p}private_table), c))
         return {p}private_use;
-    if ({p}in_table({p}nonprint_table, c))
+    if (in_table({p}nonprint_table, lengthof({p}nonprint_table), c))
         return {p}nonprint;
-    if ({p}in_table({p}combining_table, c))
+    if (in_table({p}combining_table, lengthof({p}combining_table), c))
         return {p}combining;
-    if ({p}in_table({p}doublewide_table, c))
+    if (in_table({p}doublewide_table, lengthof({p}doublewide_table), c))
         return 2;
-    if ({p}in_table({p}ambiguous_table, c))
+    if (in_table({p}ambiguous_table, lengthof({p}ambiguous_table), c))
         return {p}ambiguous;
-    if ({p}in_table({p}unassigned_table, c))
+    if (in_table({p}unassigned_table, lengthof({p}unassigned_table), c))
         return {p}unassigned;
-    if ({p}in_table({p}widened_table, c))
+    if (in_table({p}widened_table, lengthof({p}widened_table), c))
         return {p}widened_in_9;
     return 1;
 }}
-
-}} // namespace
-#endif // WIDECHAR_WIDTH_H
 '''
 
 # Ambiguous East Asian characters
